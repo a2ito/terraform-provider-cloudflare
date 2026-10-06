@@ -99,11 +99,13 @@ func (p *cloudflareProvider) Configure(ctx context.Context, req provider.Configu
 func (p *cloudflareProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewDNSRecordResource,
+		NewAPITokenResource,
 	}
 }
 
 func (p *cloudflareProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewZoneDataSource,
+		NewPermissionGroupsDataSource,
 	}
 }
