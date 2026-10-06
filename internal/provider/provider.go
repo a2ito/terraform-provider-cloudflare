@@ -103,5 +103,7 @@ func (p *cloudflareProvider) Resources(_ context.Context) []func() resource.Reso
 }
 
 func (p *cloudflareProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewZoneDataSource,
+	}
 }

@@ -42,6 +42,23 @@ func TestCreateDNSRecord(t *testing.T) {
 	}
 }
 
+func TestListZonesByName(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/zones" || r.URL.Query().Get("name") != "example.com" {
+			t.Errorf("unexpected request: %s", r.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"success":true,"errors":[],"result":[{"id":"z1","name":"example.com","status":"active","account":{"id":"a1"}}]}`))
+	})
+
+	got, err := c.ListZonesByName(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("ListZonesByName: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "z1" || got[0].Account.ID != "a1" {
+		t.Errorf("unexpected result: %+v", got)
+	}
+}
+
 func TestGetDNSRecordNotFound(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
