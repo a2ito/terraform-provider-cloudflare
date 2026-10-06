@@ -54,7 +54,7 @@ output "dns_edit_token" {
 ### Required
 
 - `name` (String) トークンの名前。
-- `policies` (Attributes List) トークンに付けるアクセスポリシー。 (see [below for nested schema](#nestedatt--policies))
+- `policies` (Attributes List) トークンに付けるアクセスポリシー。順序は区別しない（Cloudflare は更新のたびに並べ替えて返すため）。 (see [below for nested schema](#nestedatt--policies))
 
 ### Optional
 
