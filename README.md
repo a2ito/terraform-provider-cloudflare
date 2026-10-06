@@ -74,6 +74,19 @@ terraform plan -var zone_name=example.com
 - `examples/resources/<リソース名>/resource.tf`、`import.sh`
 - `examples/data-sources/<データソース名>/data-source.tf`
 
+## リリース
+
+`v*` のタグを push すると `.github/workflows/release.yml` が GoReleaser で GitHub Release を作り、Terraform Registry が取り込む。
+
+```sh
+git switch main && git pull
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+- Registry が検証するため、`SHA256SUMS` は GPG で署名する。鍵はリポジトリの Secrets（`GPG_PRIVATE_KEY` / `PASSPHRASE`）に置き、公開鍵は Registry の Signing Keys に登録する
+- 手元で成果物の形だけ確かめるなら `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=sign,publish`
+
 ## ライセンス
 
 [MPL-2.0](LICENSE)
