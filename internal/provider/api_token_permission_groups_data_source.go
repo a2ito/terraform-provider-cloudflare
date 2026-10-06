@@ -124,8 +124,12 @@ func (d *permissionGroupsDataSource) Read(ctx context.Context, req datasource.Re
 	accountID := cfg.AccountID.ValueString()
 	groups, err := d.client.ListPermissionGroups(ctx, accountID)
 	if err != nil {
+		required := "API Tokens Read"
+		if accountID != "" {
+			required = "Account API Tokens Read"
+		}
 		resp.Diagnostics.AddError("Failed to list permission groups",
-			fmt.Sprintf("権限グループの一覧を取得できませんでした（API Token に API Tokens Read 以上の権限が必要です）: %s", err))
+			fmt.Sprintf("権限グループの一覧を取得できませんでした（provider の API Token に %s 以上の権限が必要です）: %s", required, err))
 		return
 	}
 
