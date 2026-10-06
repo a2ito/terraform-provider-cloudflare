@@ -24,6 +24,7 @@ var (
 	_ resource.Resource                = (*apiTokenResource)(nil)
 	_ resource.ResourceWithConfigure   = (*apiTokenResource)(nil)
 	_ resource.ResourceWithImportState = (*apiTokenResource)(nil)
+	_ resource.ResourceWithModifyPlan  = (*apiTokenResource)(nil)
 )
 
 type apiTokenResource struct {
@@ -87,8 +88,9 @@ func (r *apiTokenResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Required:    true,
 			},
 			"policies": schema.ListNestedAttribute{
-				Description: "トークンに付けるアクセスポリシー。",
-				Required:    true,
+				Description:   "トークンに付けるアクセスポリシー。順序は区別しない（Cloudflare は更新のたびに並べ替えて返すため）。",
+				Required:      true,
+				PlanModifiers: []planmodifier.List{ignorePolicyOrder{}},
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"effect": schema.StringAttribute{
@@ -305,8 +307,10 @@ func conditionFromAPI(prior *apiTokenConditionModel, fromAPI *client.TokenCondit
 // apiTokenFromAPI は API のレスポンスと既存のモデルから新しいモデルを作る。
 // value は作成時にしか返らないため、引数で受け取った値をそのまま入れる。
 func apiTokenFromAPI(prior apiTokenModel, accountID types.String, value types.String, tok client.APIToken) apiTokenModel {
-	policies := make([]apiTokenPolicyModel, 0, len(tok.Policies))
-	for i, p := range tok.Policies {
+	// prior と同じ順序に並べてから、添字で対応する prior の値（resources の書き方）を引き継ぐ。
+	apiPolicies := orderPoliciesLike(prior.Policies, tok.Policies)
+	policies := make([]apiTokenPolicyModel, 0, len(apiPolicies))
+	for i, p := range apiPolicies {
 		priorResources := types.StringNull()
 		if i < len(prior.Policies) {
 			priorResources = prior.Policies[i].Resources
@@ -342,6 +346,32 @@ func describeToken(accountID, tokenID string) string {
 		return fmt.Sprintf("ユーザーの API Token %s", tokenID)
 	}
 	return fmt.Sprintf("アカウント %s の API Token %s", accountID, tokenID)
+}
+
+// ModifyPlan は、modified_on 以外が state と同じなら変更なしとして扱う。
+//
+// 設定と state が少しでも違うと（ポリシーの順序だけの違いでも）、framework は属性ごとの
+// plan modifier より前に Computed の modified_on を unknown にする。ignorePolicyOrder で
+// policies を state の値に戻しても modified_on が unknown のまま残り、更新が計画されてしまう。
+func (r *apiTokenResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	var modifiedOn types.String
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("modified_on"), &modifiedOn)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	candidate := resp.Plan
+	resp.Diagnostics.Append(candidate.SetAttribute(ctx, path.Root("modified_on"), modifiedOn)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if candidate.Raw.Equal(req.State.Raw) {
+		resp.Plan = candidate
+	}
 }
 
 func (r *apiTokenResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

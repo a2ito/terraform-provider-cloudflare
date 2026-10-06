@@ -66,7 +66,7 @@ func TestParseAPITokenImportID(t *testing.T) {
 }
 
 // fakeTokenAPI は API Token の API を模したインメモリのサーバ。
-// 本物と同じく、resources の JSON は整形し直し、日時は UTC に直して返す。
+// 本物と同じく、resources の JSON は整形し直し、日時は UTC に直し、ポリシーの順序を変えて返す。
 type fakeTokenAPI struct {
 	mu     sync.Mutex
 	tokens map[string]client.APIToken // key: "<owner>/<id>"。owner は "user" か account ID
@@ -112,6 +112,10 @@ func normalizeToken(tok client.APIToken) (client.APIToken, error) {
 		b, _ := json.MarshalIndent(v, "", "  ") // わざと整形を変える
 		tok.Policies[i].Resources = b
 		tok.Policies[i].ID = fmt.Sprintf("policy%d", i)
+	}
+	// 本物は PUT のたびにポリシーを作り直し、送った順とは違う順で返す。逆順にして再現する。
+	for i, j := 0, len(tok.Policies)-1; i < j; i, j = i+1, j-1 {
+		tok.Policies[i], tok.Policies[j] = tok.Policies[j], tok.Policies[i]
 	}
 	for _, ts := range []*string{&tok.ExpiresOn, &tok.NotBefore} {
 		if *ts == "" {
@@ -450,6 +454,94 @@ resource "cloudflare_api_token" "test" {
 			{
 				Config: config("tf-acc-test-renamed"),
 				Check:  resource.TestCheckResourceAttr("cloudflare_api_token.test", "name", "tf-acc-test-renamed"),
+			},
+		},
+	})
+}
+
+func TestOrderPoliciesLike(t *testing.T) {
+	prior := []apiTokenPolicyModel{
+		{Effect: types.StringValue("allow"), PermissionGroups: []types.String{types.StringValue("g1"), types.StringValue("g2")}, Resources: types.StringValue(`{"a":"*"}`)},
+		{Effect: types.StringValue("allow"), PermissionGroups: []types.String{types.StringValue("g3")}, Resources: types.StringValue(`{"b":{"c":"*"}}`)},
+	}
+	fromAPI := []client.TokenPolicy{
+		{ID: "p-new", Effect: "deny", PermissionGroups: []client.PermissionGroupRef{{ID: "g9"}}, Resources: json.RawMessage(`{"z":"*"}`)},
+		{ID: "p2", Effect: "allow", PermissionGroups: []client.PermissionGroupRef{{ID: "g3"}}, Resources: json.RawMessage(`{ "b": { "c": "*" } }`)},
+		{ID: "p1", Effect: "allow", PermissionGroups: []client.PermissionGroupRef{{ID: "g2"}, {ID: "g1"}}, Resources: json.RawMessage(`{"a":"*"}`)},
+	}
+
+	got := orderPoliciesLike(prior, fromAPI)
+	ids := []string{got[0].ID, got[1].ID, got[2].ID}
+	if want := []string{"p1", "p2", "p-new"}; strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Errorf("order = %v, want %v（prior に対応するものを先に、残りは末尾）", ids, want)
+	}
+}
+
+func TestPoliciesEquivalent(t *testing.T) {
+	p := func(groups []string, resources string) apiTokenPolicyModel {
+		gs := make([]types.String, 0, len(groups))
+		for _, g := range groups {
+			gs = append(gs, types.StringValue(g))
+		}
+		return apiTokenPolicyModel{Effect: types.StringValue("allow"), PermissionGroups: gs, Resources: types.StringValue(resources)}
+	}
+	a := []apiTokenPolicyModel{p([]string{"g1", "g2"}, `{"a":"*"}`), p([]string{"g3"}, `{"b":"*"}`)}
+
+	if !policiesEquivalent(a, []apiTokenPolicyModel{p([]string{"g3"}, `{ "b": "*" }`), p([]string{"g2", "g1"}, `{"a":"*"}`)}) {
+		t.Error("順序・権限グループの順序・JSON の書き方だけが違うものは同じとみなすべき")
+	}
+	if policiesEquivalent(a, []apiTokenPolicyModel{p([]string{"g1", "g2"}, `{"a":"*"}`), p([]string{"g3"}, `{"c":"*"}`)}) {
+		t.Error("resources が違うものは別とみなすべき")
+	}
+	if policiesEquivalent(a, []apiTokenPolicyModel{p([]string{"g1", "g2"}, `{"a":"*"}`)}) {
+		t.Error("ポリシーの数が違うものは別とみなすべき")
+	}
+}
+
+const multiPolicyTokenConfig = `
+resource "cloudflare_api_token" "test" {
+  account_id = "acct1"
+  name       = %q
+
+  policies = [
+    %s,
+    %s,
+  ]
+}
+`
+
+const (
+	zonePolicy    = `{ effect = "allow", permission_groups = ["g-dns-write"], resources = jsonencode({ "com.cloudflare.api.account.zone.zone1" = "*" }) }`
+	accountPolicy = `{ effect = "allow", permission_groups = ["g-zone-read", "g-dns-write"], resources = jsonencode({ "com.cloudflare.api.account.acct1" = "*" }) }`
+)
+
+// TestAPITokenResource_policyOrder は、API がポリシーの順序を変えて返しても差分が出ないことを確かめる。
+// 各ステップの後に terraform-plugin-testing が plan を流し、差分があれば失敗する。
+func TestAPITokenResource_policyOrder(t *testing.T) {
+	newFakeTokenAPI(t)
+	const addr = "cloudflare_api_token.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// 作成時に API が逆順で返しても、設定の順で state に入る
+				Config: fmt.Sprintf(multiPolicyTokenConfig, "multi", zonePolicy, accountPolicy),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(addr, "policies.#", "2"),
+					resource.TestCheckResourceAttr(addr, "policies.0.permission_groups.#", "1"),
+					resource.TestCheckResourceAttr(addr, "policies.1.permission_groups.#", "2"),
+				),
+			},
+			{
+				// 名前だけ変える。PUT のレスポンスで順序が変わっても inconsistent result にならない
+				Config: fmt.Sprintf(multiPolicyTokenConfig, "multi-renamed", zonePolicy, accountPolicy),
+				Check:  resource.TestCheckResourceAttr(addr, "name", "multi-renamed"),
+			},
+			{
+				// 設定側でポリシーの順序を入れ替えても差分にならない
+				Config:   fmt.Sprintf(multiPolicyTokenConfig, "multi-renamed", accountPolicy, zonePolicy),
+				PlanOnly: true,
 			},
 		},
 	})
