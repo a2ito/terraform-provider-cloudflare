@@ -1,0 +1,6 @@
+/terraform-provider-cloudflare
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+.terraformrc

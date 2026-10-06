@@ -1,0 +1,10 @@
+# ローカルでビルドした provider を使うための設定。
+# `make install` のあと、このファイルを ~/.terraformrc にコピーして <GOBIN> を
+# `go env GOPATH` の結果 + /bin に置き換える（または TF_CLI_CONFIG_FILE で指定する）。
+# dev_overrides を使う場合、terraform init は不要。
+provider_installation {
+  dev_overrides {
+    "registry.terraform.io/a2-ito/cloudflare" = "<GOBIN>"
+  }
+  direct {}
+}
