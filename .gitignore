@@ -4,3 +4,6 @@
 *.tfstate
 *.tfstate.*
 .terraformrc
+
+# GoReleaser の出力
+/dist/
