@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/a2-ito/terraform-provider-cloudflare/internal/client"
+	"github.com/a2ito/terraform-provider-cloudflare/internal/client"
 )
 
 const (

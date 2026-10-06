@@ -10,7 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
-	"github.com/a2-ito/terraform-provider-cloudflare/internal/client"
+	"github.com/a2ito/terraform-provider-cloudflare/internal/client"
 )
 
 // newFakeZoneServer は GET /zones?name=... に zones を名前で絞って返すサーバを立てる。

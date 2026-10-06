@@ -15,7 +15,7 @@ Cloudflare API v4 を操作する Provider。
 terraform {
   required_providers {
     cloudflare = {
-      source = "registry.terraform.io/a2-ito/cloudflare"
+      source = "registry.terraform.io/a2ito/cloudflare"
     }
   }
 }

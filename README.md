@@ -1,5 +1,11 @@
 # terraform-provider-cloudflare
 
+[![ci](https://github.com/a2ito/terraform-provider-cloudflare/actions/workflows/ci.yml/badge.svg)](https://github.com/a2ito/terraform-provider-cloudflare/actions/workflows/ci.yml)
+
+> [!NOTE]
+> Cloudflare 公式の provider（[cloudflare/terraform-provider-cloudflare](https://github.com/cloudflare/terraform-provider-cloudflare)）ではない。
+> 学習用に書いた非公式の実装で、本番での利用は想定していない。
+
 [terraform-plugin-framework](https://github.com/hashicorp/terraform-plugin-framework) で書いた Cloudflare の Terraform Provider（学習用）。
 Cloudflare API v4 は SDK を使わず、`internal/client` の自前クライアントで呼び出す。
 
@@ -58,3 +64,7 @@ terraform plan -var zone_name=example.com
 - `examples/provider/provider.tf`
 - `examples/resources/<リソース名>/resource.tf`、`import.sh`
 - `examples/data-sources/<データソース名>/data-source.tf`
+
+## ライセンス
+
+[MPL-2.0](LICENSE)

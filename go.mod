@@ -1,4 +1,4 @@
-module github.com/a2-ito/terraform-provider-cloudflare
+module github.com/a2ito/terraform-provider-cloudflare
 
 go 1.25.8
 

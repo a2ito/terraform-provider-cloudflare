@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
-	"github.com/a2-ito/terraform-provider-cloudflare/internal/client"
+	"github.com/a2ito/terraform-provider-cloudflare/internal/client"
 )
 
 func TestResolveName(t *testing.T) {

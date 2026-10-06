@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/a2-ito/terraform-provider-cloudflare/internal/provider"
+	"github.com/a2ito/terraform-provider-cloudflare/internal/provider"
 )
 
 // version はリリース時に ldflags で上書きする。
@@ -19,7 +19,7 @@ func main() {
 	flag.Parse()
 
 	err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
-		Address: "registry.terraform.io/a2-ito/cloudflare",
+		Address: "registry.terraform.io/a2ito/cloudflare",
 		Debug:   debug,
 	})
 	if err != nil {

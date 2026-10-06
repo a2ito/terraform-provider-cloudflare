@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # テストが terraform バイナリを使う（フェイクサーバ相手に plan / apply する）
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: make docs
+      - name: docs/ と examples/ が最新か
+        run: |
+          if [ -n "$(git status --porcelain docs examples)" ]; then
+            git status --porcelain docs examples
+            git diff docs examples
+            echo "::error::make docs の結果がコミットされていません。make docs を実行してコミットしてください。"
+            exit 1
+          fi
+
+  # ruleset の必須チェックに指定するための集約ジョブ
+  ci-result:
+    if: always()
+    needs: [test, docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: すべてのジョブが成功したか
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "::error::失敗またはスキップされたジョブがあります: ${{ toJSON(needs) }}"
+            exit 1
+          fi

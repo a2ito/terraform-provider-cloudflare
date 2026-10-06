@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     cloudflare = {
-      source = "registry.terraform.io/a2-ito/cloudflare"
+      source = "registry.terraform.io/a2ito/cloudflare"
     }
   }
 }
