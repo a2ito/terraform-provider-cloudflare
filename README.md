@@ -14,7 +14,9 @@ Cloudflare API v4 は SDK を使わず、`internal/client` の自前クライア
 | 種類 | 名前 | ドキュメント |
 | --- | --- | --- |
 | Resource | `cloudflare_dns_record` | [docs/resources/dns_record.md](docs/resources/dns_record.md) |
+| Resource | `cloudflare_api_token` | [docs/resources/api_token.md](docs/resources/api_token.md) |
 | Data Source | `cloudflare_zone` | [docs/data-sources/zone.md](docs/data-sources/zone.md) |
+| Data Source | `cloudflare_api_token_permission_groups` | [docs/data-sources/api_token_permission_groups.md](docs/data-sources/api_token_permission_groups.md) |
 
 Provider の設定は [docs/index.md](docs/index.md) を参照。
 
@@ -48,13 +50,20 @@ terraform plan -var zone_name=example.com
 
 ### acceptance test
 
-実際にレコードを作成・削除する。以下の環境変数が必要。
+実際に DNS レコードと API Token を作成・削除する。以下の環境変数が必要。
 
 | 環境変数 | 内容 |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | `Zone:Read` と `DNS:Edit` 権限を持つ API Token |
+| `CLOUDFLARE_API_TOKEN` | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit` 権限を持つ API Token |
 | `CLOUDFLARE_ZONE_ID` | テストに使う Zone の ID |
 | `CLOUDFLARE_ZONE_NAME` | テストに使う Zone の名前 |
+| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token` のテストに使うアカウントの ID |
+
+### API Token を管理するときの注意
+
+- `cloudflare_api_token` の値（`value`）は作成時にしか取得できないため、state に平文で保存される。state は暗号化した remote backend で管理する
+- provider が使うトークン自身にトークン作成の権限が要る（ユーザーのトークンは `API Tokens:Edit`、アカウントのトークンは `Account API Tokens:Edit`）。この最初の 1 本はダッシュボードで作る
+- provider が使っているトークン自身を Terraform で管理して destroy すると、それ以降の API 呼び出しができなくなる
 
 ### ドキュメント
 
