@@ -20,7 +20,9 @@ terraform {
   }
 }
 
-# api_token を省略すると環境変数 CLOUDFLARE_API_TOKEN を使う
+# api_token を省略すると環境変数 CLOUDFLARE_API_TOKEN を使う。
+# cloudflare_workers_build_trigger を使う場合、api_token がアカウントのトークンなら、
+# Workers Builds の API 用にユーザーのトークンを builds_api_token（環境変数 CLOUDFLARE_BUILDS_API_TOKEN）で渡す。
 provider "cloudflare" {}
 ```
 
@@ -31,3 +33,4 @@ provider "cloudflare" {}
 
 - `api_token` (String, Sensitive) Cloudflare の API Token。未指定の場合は環境変数 CLOUDFLARE_API_TOKEN を使う。
 - `base_url` (String) API のベース URL（主にテスト用）。未指定の場合は環境変数 CLOUDFLARE_BASE_URL、それも無ければ https://api.cloudflare.com/client/v4 を使う。
+- `builds_api_token` (String, Sensitive) Workers Builds の API（`cloudflare_workers_build_trigger`）だけに使う API Token。Builds の API はアカウントのトークンを受け付けないため、`api_token` がアカウントのトークンならユーザーのトークンをここに渡す。未指定の場合は環境変数 CLOUDFLARE_BUILDS_API_TOKEN、それも無ければ `api_token` を使う。

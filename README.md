@@ -16,6 +16,7 @@ Cloudflare API v4 は SDK を使わず、`internal/client` の自前クライア
 | Resource | `cloudflare_dns_record` | [docs/resources/dns_record.md](docs/resources/dns_record.md) |
 | Resource | `cloudflare_api_token` | [docs/resources/api_token.md](docs/resources/api_token.md) |
 | Resource | `cloudflare_workers_script` | [docs/resources/workers_script.md](docs/resources/workers_script.md) |
+| Resource | `cloudflare_workers_build_trigger` | [docs/resources/workers_build_trigger.md](docs/resources/workers_build_trigger.md) |
 | Data Source | `cloudflare_zone` | [docs/data-sources/zone.md](docs/data-sources/zone.md) |
 | Data Source | `cloudflare_api_token_permission_groups` | [docs/data-sources/api_token_permission_groups.md](docs/data-sources/api_token_permission_groups.md) |
 
@@ -51,14 +52,19 @@ terraform plan -var zone_name=example.com
 
 ### acceptance test
 
-実際に DNS レコードと API Token を作成・削除する。以下の環境変数が必要。
+実際に DNS レコード・API Token・Worker・Workers Builds のトリガーを作成・削除する。以下の環境変数が必要。
 
 | 環境変数 | 内容 |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit`・`Workers Scripts:Edit` 権限を持つ API Token |
 | `CLOUDFLARE_ZONE_ID` | テストに使う Zone の ID |
 | `CLOUDFLARE_ZONE_NAME` | テストに使う Zone の名前 |
-| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token`・`cloudflare_workers_script` のテストに使うアカウントの ID |
+| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token`・`cloudflare_workers_script`・`cloudflare_workers_build_trigger` のテストに使うアカウントの ID |
+| `CLOUDFLARE_BUILDS_API_TOKEN` | `Workers CI Write`（UI では Workers Builds Configuration : Edit）を持つ**ユーザーの** API Token |
+| `CLOUDFLARE_REPO_CONNECTION_UUID` | トリガーのテストに使う既存のリポジトリの接続の UUID |
+| `CLOUDFLARE_BUILD_TOKEN_UUID` | トリガーのテストに使う既存のビルドトークンの UUID |
+
+トリガーのテストは、push されないブランチ（`tf-acc-test-never-pushed`）だけをビルドするトリガーを作るので、ビルドは走らない。
 
 ### API Token を管理するときの注意
 
@@ -70,6 +76,17 @@ terraform plan -var zone_name=example.com
 
 - 対応しているのは ES Modules 形式の単一ファイルのスクリプトと、`plain_text`・`secret_text` のバインディングのみ。apply するとバインディングは Terraform の設定で丸ごと置き換わる（ダッシュボードで追加した KV などのバインディングは消える）
 - `secret_text_bindings` の値は state に平文で保存される。また Cloudflare は値を返さないため、Terraform の外での値の変更は検出できない
+- `content` を省略すると、コードを管理しないモードになる。Workers Builds や wrangler がデプロイする Worker の Secret だけを Terraform で持つときに使う。Secret は 1 件ずつ反映し、コードと他のバインディング（D1・assets など）には触らない
+  - このモードでは `plain_text_bindings`・`main_module`・`compatibility_*` は指定できない。`wrangler deploy` が上書きするため、wrangler の設定で持つ
+  - 既存の Worker は `<account_id>/<script_name>/no-content` で import する（`/no-content` を付けないと本体まで読み、plan に本体の差分が出る）
+  - destroy すると Worker ごと消える。デプロイ先の Worker を守るなら `lifecycle { prevent_destroy = true }` を付ける
+
+### Workers Builds を管理するときの注意
+
+- **Builds の API はアカウントのトークンを受け付けない**（`12006: Invalid token` が返る。権限不足の `10000` とは別）。`api_token` がアカウントのトークンなら、ユーザーのトークンを `builds_api_token` に渡す
+- 権限の名前は UI と API で違う。UI の「Workers Builds Configuration」は、API（権限グループの一覧）では `Workers CI Write` / `Workers CI Read`
+- リポジトリの接続（GitHub App のインストール）とビルドトークンはダッシュボードで作り、UUID を指定する
+- 作成時は `trigger_name` が必須（無いと `12002: Invalid request body`）。省略したときは、ダッシュボードと同じく Worker の tag を名前にする
 
 ### ドキュメント
 

@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	envAPIToken = "CLOUDFLARE_API_TOKEN"
-	envBaseURL  = "CLOUDFLARE_BASE_URL"
+	envAPIToken       = "CLOUDFLARE_API_TOKEN"
+	envBuildsAPIToken = "CLOUDFLARE_BUILDS_API_TOKEN"
+	envBaseURL        = "CLOUDFLARE_BASE_URL"
 )
 
 var _ provider.Provider = (*cloudflareProvider)(nil)
@@ -26,8 +27,9 @@ type cloudflareProvider struct {
 }
 
 type cloudflareProviderModel struct {
-	APIToken types.String `tfsdk:"api_token"`
-	BaseURL  types.String `tfsdk:"base_url"`
+	APIToken       types.String `tfsdk:"api_token"`
+	BuildsAPIToken types.String `tfsdk:"builds_api_token"`
+	BaseURL        types.String `tfsdk:"base_url"`
 }
 
 func New(version string) func() provider.Provider {
@@ -49,6 +51,13 @@ func (p *cloudflareProvider) Schema(_ context.Context, _ provider.SchemaRequest,
 				Description: "Cloudflare の API Token。未指定の場合は環境変数 " + envAPIToken + " を使う。",
 				Optional:    true,
 				Sensitive:   true,
+			},
+			"builds_api_token": schema.StringAttribute{
+				Description: "Workers Builds の API（`cloudflare_workers_build_trigger`）だけに使う API Token。" +
+					"Builds の API はアカウントのトークンを受け付けないため、`api_token` がアカウントのトークンならユーザーのトークンをここに渡す。" +
+					"未指定の場合は環境変数 " + envBuildsAPIToken + "、それも無ければ `api_token` を使う。",
+				Optional:  true,
+				Sensitive: true,
 			},
 			"base_url": schema.StringAttribute{
 				Description: "API のベース URL（主にテスト用）。未指定の場合は環境変数 " + envBaseURL + "、それも無ければ " + client.DefaultBaseURL + " を使う。",
@@ -73,6 +82,11 @@ func (p *cloudflareProvider) Configure(ctx context.Context, req provider.Configu
 		return
 	}
 
+	if cfg.BuildsAPIToken.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("builds_api_token"), "Unknown Cloudflare Builds API token",
+			"builds_api_token が apply 時まで確定しない値になっています。静的な値か環境変数 "+envBuildsAPIToken+" で指定してください。")
+		return
+	}
 	if cfg.APIToken.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(path.Root("api_token"), "Unknown Cloudflare API token",
 			"api_token が apply 時まで確定しない値になっています。静的な値か環境変数 "+envAPIToken+" で指定してください。")
@@ -90,6 +104,9 @@ func (p *cloudflareProvider) Configure(ctx context.Context, req provider.Configu
 	if baseURL := valueOrEnv(cfg.BaseURL, envBaseURL); baseURL != "" {
 		opts = append(opts, client.WithBaseURL(baseURL))
 	}
+	if buildsToken := valueOrEnv(cfg.BuildsAPIToken, envBuildsAPIToken); buildsToken != "" {
+		opts = append(opts, client.WithBuildsAPIToken(buildsToken))
+	}
 
 	c := client.New(token, opts...)
 	resp.ResourceData = c
@@ -101,6 +118,7 @@ func (p *cloudflareProvider) Resources(_ context.Context) []func() resource.Reso
 		NewDNSRecordResource,
 		NewAPITokenResource,
 		NewWorkersScriptResource,
+		NewWorkersBuildTriggerResource,
 	}
 }
 
