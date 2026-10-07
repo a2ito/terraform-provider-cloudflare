@@ -89,35 +89,65 @@ func do[T any](ctx context.Context, c *Client, method, path string, body any) (T
 		}
 		reqBody = bytes.NewReader(b)
 	}
+	return send[T](ctx, c, method, path, reqBody, "application/json")
+}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+// send はリクエストを送り、Cloudflare API のエンベロープ形式のレスポンスから result を取り出す。
+func send[T any](ctx context.Context, c *Client, method, path string, body io.Reader, contentType string) (T, error) {
+	var zero T
+
+	status, _, raw, err := c.roundTrip(ctx, method, path, body, contentType)
 	if err != nil {
-		return zero, fmt.Errorf("build request %s %s: %w", method, path, err)
+		return zero, err
+	}
+
+	var env envelope[T]
+	if err := json.Unmarshal(raw, &env); err != nil {
+		if status >= 400 {
+			return zero, &ResponseError{StatusCode: status}
+		}
+		return zero, fmt.Errorf("decode response body (HTTP %d): %w", status, err)
+	}
+
+	if status >= 400 || !env.Success {
+		return zero, &ResponseError{StatusCode: status, Errors: env.Errors}
+	}
+	return env.Result, nil
+}
+
+// getRaw はエンベロープに包まれていないレスポンス（スクリプト本体など）をヘッダごと取得する。
+func getRaw(ctx context.Context, c *Client, path string) (http.Header, []byte, error) {
+	status, header, raw, err := c.roundTrip(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	if status >= 400 {
+		var env envelope[json.RawMessage]
+		_ = json.Unmarshal(raw, &env) // エラー時のみエンベロープで返るので、読めなければ HTTP ステータスだけで報告する
+		return nil, nil, &ResponseError{StatusCode: status, Errors: env.Errors}
+	}
+	return header, raw, nil
+}
+
+func (c *Client) roundTrip(ctx context.Context, method, path string, body io.Reader, contentType string) (int, http.Header, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("build request %s %s: %w", method, path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
-	req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return zero, fmt.Errorf("send request %s %s: %w", method, path, err)
+		return 0, nil, nil, fmt.Errorf("send request %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zero, fmt.Errorf("read response body: %w", err)
+		return 0, nil, nil, fmt.Errorf("read response body: %w", err)
 	}
-
-	var env envelope[T]
-	if err := json.Unmarshal(raw, &env); err != nil {
-		if resp.StatusCode >= 400 {
-			return zero, &ResponseError{StatusCode: resp.StatusCode}
-		}
-		return zero, fmt.Errorf("decode response body (HTTP %d): %w", resp.StatusCode, err)
-	}
-
-	if resp.StatusCode >= 400 || !env.Success {
-		return zero, &ResponseError{StatusCode: resp.StatusCode, Errors: env.Errors}
-	}
-	return env.Result, nil
+	return resp.StatusCode, resp.Header, raw, nil
 }

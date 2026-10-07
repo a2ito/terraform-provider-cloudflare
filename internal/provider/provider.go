@@ -100,6 +100,7 @@ func (p *cloudflareProvider) Resources(_ context.Context) []func() resource.Reso
 	return []func() resource.Resource{
 		NewDNSRecordResource,
 		NewAPITokenResource,
+		NewWorkersScriptResource,
 	}
 }
 
