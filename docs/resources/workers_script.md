@@ -4,11 +4,14 @@ page_title: "cloudflare_workers_script Resource - cloudflare"
 subcategory: ""
 description: |-
   Cloudflare Workers のスクリプト（ES Modules 形式・単一ファイル）。作成・更新するとそのままデプロイされる。
+  content を省略すると、コードを管理しないモードになる。Workers Builds や wrangler がデプロイする Worker の Secret だけを管理するときに使う。このモードでは Secret を 1 件ずつ反映し、コードと他のバインディング（D1・KV・assets など）には触らない。Worker が無ければ作成時に仮のスクリプトを置き、以後のコードは他の仕組みに任せる。
 ---
 
 # cloudflare_workers_script (Resource)
 
 Cloudflare Workers のスクリプト（ES Modules 形式・単一ファイル）。作成・更新するとそのままデプロイされる。
+
+`content` を省略すると、コードを管理しないモードになる。Workers Builds や wrangler がデプロイする Worker の Secret だけを管理するときに使う。このモードでは Secret を 1 件ずつ反映し、コードと他のバインディング（D1・KV・assets など）には触らない。Worker が無ければ作成時に仮のスクリプトを置き、以後のコードは他の仕組みに任せる。
 
 ## Example Usage
 
@@ -35,13 +38,13 @@ resource "cloudflare_workers_script" "hello" {
 ### Required
 
 - `account_id` (String) スクリプトを作成するアカウントの ID。変更するとリソースを作り直す。
-- `content` (String) スクリプト本体（ES Modules 形式）。`file("worker.js")` のようにファイルから読み込むとよい。
 - `script_name` (String) スクリプト名。変更するとリソースを作り直す。
 
 ### Optional
 
-- `compatibility_date` (String) 互換性日付（例: `2026-01-01`）。省略すると Cloudflare 側の既定値になる。
+- `compatibility_date` (String) 互換性日付（例: `2026-01-01`）。省略すると Cloudflare 側の既定値（`content` を省略した場合はデプロイされているもの）になる。
 - `compatibility_flags` (Set of String) 互換性フラグ（例: `nodejs_compat`）。
+- `content` (String) スクリプト本体（ES Modules 形式）。`file("worker.js")` のようにファイルから読み込むとよい。省略するとコードを管理しないモードになり、`plain_text_bindings`・`main_module`・`compatibility_date`・`compatibility_flags` は指定できない（wrangler のデプロイで上書きされるため）。
 - `main_module` (String) メインモジュールのファイル名。既定値は `worker.js`。
 - `plain_text_bindings` (Map of String) 平文の環境変数。キーがバインディング名、値がその内容。
 - `secret_text_bindings` (Map of String, Sensitive) シークレットの環境変数。キーがバインディング名、値がその内容。Cloudflare は値を返さないため、Terraform の外での値の変更は検出できない（バインディングの追加・削除は検出する）。
@@ -60,4 +63,7 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 # <account_id>/<script_name> の形式で指定する。
 # secret_text_bindings の値は取得できないため、import 後の最初の apply で再アップロードされる。
 terraform import cloudflare_workers_script.hello f037e56e89293a057740de681ac9abbe/hello
+
+# content を管理しない（Workers Builds などがデプロイする）Worker は、末尾に /no-content を付ける。
+terraform import cloudflare_workers_script.web f037e56e89293a057740de681ac9abbe/web/no-content
 ```

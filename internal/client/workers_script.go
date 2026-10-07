@@ -150,3 +150,36 @@ func (c *Client) DeleteWorkerScript(ctx context.Context, accountID, scriptName s
 	_, err := do[json.RawMessage](ctx, c, http.MethodDelete, workerScriptPath(accountID, scriptName), nil)
 	return err
 }
+
+// WorkerScriptSummary はアカウントの Worker 一覧の 1 件。
+type WorkerScriptSummary struct {
+	ID  string `json:"id"`
+	Tag string `json:"tag"`
+}
+
+// GetWorkerScriptTag はスクリプト名から Worker の tag（Builds の API が使う不変の ID）を引く。
+// 見つからなければ 404 の ResponseError を返す。
+func (c *Client) GetWorkerScriptTag(ctx context.Context, accountID, scriptName string) (string, error) {
+	scripts, err := do[[]WorkerScriptSummary](ctx, c, http.MethodGet, fmt.Sprintf("/accounts/%s/workers/scripts", url.PathEscape(accountID)), nil)
+	if err != nil {
+		return "", err
+	}
+	for _, s := range scripts {
+		if s.ID == scriptName {
+			return s.Tag, nil
+		}
+	}
+	return "", &ResponseError{StatusCode: http.StatusNotFound, Errors: []APIError{{Message: fmt.Sprintf("worker script %q not found", scriptName)}}}
+}
+
+// PutWorkerSecret は Secret を 1 件作成または更新する。他のバインディングとコードには触らない。
+func (c *Client) PutWorkerSecret(ctx context.Context, accountID, scriptName, name, text string) error {
+	_, err := do[json.RawMessage](ctx, c, http.MethodPut, workerScriptPath(accountID, scriptName)+"/secrets",
+		WorkerBinding{Type: WorkerBindingSecretText, Name: name, Text: text})
+	return err
+}
+
+func (c *Client) DeleteWorkerSecret(ctx context.Context, accountID, scriptName, name string) error {
+	_, err := do[json.RawMessage](ctx, c, http.MethodDelete, workerScriptPath(accountID, scriptName)+"/secrets/"+url.PathEscape(name), nil)
+	return err
+}

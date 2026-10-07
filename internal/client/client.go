@@ -19,6 +19,9 @@ type Client struct {
 	baseURL    string
 	apiToken   string
 	httpClient *http.Client
+	// buildsAPIToken は Workers Builds の API だけに使うトークン。
+	// Builds の API はアカウントのトークンを受け付けず、ユーザーのトークンが要るため分けている。
+	buildsAPIToken string
 }
 
 type Option func(*Client)
@@ -29,6 +32,22 @@ func WithBaseURL(baseURL string) Option {
 
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
+}
+
+// WithBuildsAPIToken は Workers Builds の API に使うトークンを指定する。
+// 指定しなければ通常のトークンを使う。
+func WithBuildsAPIToken(token string) Option {
+	return func(c *Client) { c.buildsAPIToken = token }
+}
+
+// builds は Workers Builds の API を呼ぶためのクライアントを返す。
+func (c *Client) builds() *Client {
+	if c.buildsAPIToken == "" {
+		return c
+	}
+	bc := *c
+	bc.apiToken = c.buildsAPIToken
+	return &bc
 }
 
 func New(apiToken string, opts ...Option) *Client {

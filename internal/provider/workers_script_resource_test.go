@@ -24,12 +24,21 @@ import (
 )
 
 func TestParseWorkersScriptImportID(t *testing.T) {
-	accountID, name, err := parseWorkersScriptImportID("acct1/hello")
-	if err != nil || accountID != "acct1" || name != "hello" {
-		t.Errorf("parseWorkersScriptImportID(acct1/hello) = (%q, %q, %v)", accountID, name, err)
+	cases := []struct {
+		id          string
+		withContent bool
+	}{
+		{"acct1/hello", true},
+		{"acct1/hello/no-content", false},
 	}
-	for _, bad := range []string{"", "acct1", "acct1/", "/hello", "a/b/c"} {
-		if _, _, err := parseWorkersScriptImportID(bad); err == nil {
+	for _, tc := range cases {
+		accountID, name, withContent, err := parseWorkersScriptImportID(tc.id)
+		if err != nil || accountID != "acct1" || name != "hello" || withContent != tc.withContent {
+			t.Errorf("parseWorkersScriptImportID(%q) = (%q, %q, %v, %v)", tc.id, accountID, name, withContent, err)
+		}
+	}
+	for _, bad := range []string{"", "acct1", "acct1/", "/hello", "a/b/c", "acct1/hello/no-content/x"} {
+		if _, _, _, err := parseWorkersScriptImportID(bad); err == nil {
 			t.Errorf("parseWorkersScriptImportID(%q) succeeded, want error", bad)
 		}
 	}
@@ -75,9 +84,26 @@ type fakeWorkerScript struct {
 
 // fakeWorkers は Workers スクリプト API を模したインメモリのサーバ。
 type fakeWorkers struct {
-	mu      sync.Mutex
-	scripts map[string]fakeWorkerScript // key: "<account_id>/<script_name>"
+	mu         sync.Mutex
+	scripts    map[string]fakeWorkerScript // key: "<account_id>/<script_name>"
+	secretPuts []string                    // Secret の API で更新された名前（順に）
+
+	// Workers Builds
+	triggers map[string]client.BuildTrigger                        // key: trigger UUID
+	buildEnv map[string]map[string]client.BuildEnvironmentVariable // key: trigger UUID
+	nextID   int
 }
+
+func newFakeWorkers() *fakeWorkers {
+	return &fakeWorkers{
+		scripts:  map[string]fakeWorkerScript{},
+		triggers: map[string]client.BuildTrigger{},
+		buildEnv: map[string]map[string]client.BuildEnvironmentVariable{},
+	}
+}
+
+// fakeTag は Worker の tag。実 API では名前と無関係な UUID だが、テストでは名前から作る。
+func fakeTag(name string) string { return "tag-" + name }
 
 const fakeDefaultCompatibilityDate = "2025-01-01"
 
@@ -135,7 +161,22 @@ func (f *fakeWorkers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	// accounts/{account}/workers/scripts/{name}[/settings | /content/v2]
+	if len(parts) >= 3 && parts[0] == "accounts" && parts[2] == "builds" {
+		f.serveBuilds(w, r, parts[3:])
+		return
+	}
+	// accounts/{account}/workers/scripts
+	if len(parts) == 4 && parts[0] == "accounts" && parts[2] == "workers" && parts[3] == "scripts" && r.Method == http.MethodGet {
+		list := []client.WorkerScriptSummary{}
+		for key := range f.scripts {
+			if account, name, _ := strings.Cut(key, "/"); account == parts[1] {
+				list = append(list, client.WorkerScriptSummary{ID: name, Tag: fakeTag(name)})
+			}
+		}
+		f.writeResult(w, http.StatusOK, list)
+		return
+	}
+	// accounts/{account}/workers/scripts/{name}[/settings | /content/v2 | /secrets[/{secret}]]
 	if len(parts) < 5 || parts[0] != "accounts" || parts[2] != "workers" || parts[3] != "scripts" {
 		f.writeResult(w, http.StatusNotFound, nil)
 		return
@@ -186,6 +227,33 @@ func (f *fakeWorkers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", mw.FormDataContentType())
 		w.Header().Set("CF-Entrypoint", existing.meta.MainModule)
 		_, _ = w.Write(buf.Bytes())
+	case sub == "secrets" && r.Method == http.MethodPut:
+		var b client.WorkerBinding
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			f.writeResult(w, http.StatusBadRequest, nil)
+			return
+		}
+		bindings := []client.WorkerBinding{}
+		for _, cur := range existing.meta.Bindings {
+			if cur.Name != b.Name {
+				bindings = append(bindings, cur)
+			}
+		}
+		existing.meta.Bindings = append(bindings, b)
+		f.scripts[key] = existing
+		f.secretPuts = append(f.secretPuts, b.Name)
+		f.writeResult(w, http.StatusOK, map[string]string{"name": b.Name, "type": b.Type})
+	case strings.HasPrefix(sub, "secrets/") && r.Method == http.MethodDelete:
+		name := strings.TrimPrefix(sub, "secrets/")
+		bindings := []client.WorkerBinding{}
+		for _, cur := range existing.meta.Bindings {
+			if !(cur.Type == client.WorkerBindingSecretText && cur.Name == name) {
+				bindings = append(bindings, cur)
+			}
+		}
+		existing.meta.Bindings = bindings
+		f.scripts[key] = existing
+		f.writeResult(w, http.StatusOK, nil)
 	case sub == "" && r.Method == http.MethodDelete:
 		delete(f.scripts, key)
 		f.writeResult(w, http.StatusOK, nil)
@@ -227,7 +295,7 @@ resource "cloudflare_workers_script" "test" {
 
 // TestWorkersScriptResource_fake はフェイクサーバを相手に CRUD・import・ドリフト検出を通しで確認する。
 func TestWorkersScriptResource_fake(t *testing.T) {
-	fake := &fakeWorkers{scripts: map[string]fakeWorkerScript{}}
+	fake := newFakeWorkers()
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 
@@ -306,7 +374,7 @@ func TestWorkersScriptResource_fake(t *testing.T) {
 }
 
 func TestWorkersScriptResource_duplicateBindingName(t *testing.T) {
-	fake := &fakeWorkers{scripts: map[string]fakeWorkerScript{}}
+	fake := newFakeWorkers()
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 
@@ -394,6 +462,165 @@ resource "cloudflare_workers_script" "test" {
 			{
 				Config: config("v2"),
 				Check:  resource.TestCheckResourceAttr("cloudflare_workers_script.test", "plain_text_bindings.MESSAGE", "v2"),
+			},
+		},
+	})
+}
+
+func workersScriptNoContentConfig(secrets string) string {
+	return `
+resource "cloudflare_workers_script" "app" {
+  account_id  = "acct1"
+  script_name = "app"
+  secret_text_bindings = {` + secrets + `
+  }
+}
+`
+}
+
+// TestWorkersScriptResource_noContent は content を管理しないモードを確認する。
+// 別の仕組み（Workers Builds の wrangler deploy）がコードとバインディングを変えても差分にせず、
+// Secret だけを 1 件ずつ反映する。
+func TestWorkersScriptResource_noContent(t *testing.T) {
+	fake := newFakeWorkers()
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+
+	t.Setenv(envAPIToken, "fake-token")
+	t.Setenv(envBaseURL, srv.URL)
+
+	const addr = "cloudflare_workers_script.app"
+	const deployed = "export default { fetch() { return new Response('deployed by wrangler') } }"
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// 無ければ仮のスクリプトで作る
+				Config: workersScriptNoContentConfig(`
+    AUTH_SECRET = "s1"
+    API_KEY     = "k1"`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr(addr, "content"),
+					resource.TestCheckResourceAttr(addr, "compatibility_date", fakeDefaultCompatibilityDate),
+					resource.TestCheckResourceAttr(addr, "secret_text_bindings.AUTH_SECRET", "s1"),
+					func(_ *terraform.State) error {
+						fake.mu.Lock()
+						defer fake.mu.Unlock()
+						s := fake.scripts["acct1/app"]
+						if s.content != placeholderContent || len(s.meta.Bindings) != 2 {
+							return fmt.Errorf("unexpected placeholder: %+v", s)
+						}
+						return nil
+					},
+				),
+			},
+			{
+				// wrangler deploy がコード・平文の変数・D1・互換性設定を置き換えても差分にしない
+				PreConfig: func() {
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					s := fake.scripts["acct1/app"]
+					s.content = deployed
+					s.meta.MainModule = "index.js"
+					s.meta.CompatibilityDate = "2026-09-11"
+					s.meta.CompatibilityFlags = []string{"nodejs_compat"}
+					s.meta.Bindings = append(s.meta.Bindings,
+						client.WorkerBinding{Type: client.WorkerBindingPlainText, Name: "AUTH_TRUST_HOST", Text: "true"},
+						client.WorkerBinding{Type: "d1", Name: "DB"},
+					)
+					fake.scripts["acct1/app"] = s
+				},
+				Config: workersScriptNoContentConfig(`
+    AUTH_SECRET = "s1"
+    API_KEY     = "k1"`),
+				PlanOnly: true,
+			},
+			{
+				// 変わった Secret だけを送り、消えたものは消す。コードと他のバインディングには触らない
+				PreConfig: func() {
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					fake.secretPuts = nil
+				},
+				Config: workersScriptNoContentConfig(`
+    AUTH_SECRET = "s2"
+    NEW_SECRET  = "n1"`),
+				Check: func(_ *terraform.State) error {
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					s := fake.scripts["acct1/app"]
+					names := map[string]string{}
+					for _, b := range s.meta.Bindings {
+						names[b.Name] = b.Type
+					}
+					if fmt.Sprint(fake.secretPuts) != "[AUTH_SECRET NEW_SECRET]" {
+						return fmt.Errorf("unexpected secret updates: %v", fake.secretPuts)
+					}
+					if s.content != deployed || names["DB"] != "d1" || names["AUTH_TRUST_HOST"] != client.WorkerBindingPlainText || names["API_KEY"] != "" {
+						return fmt.Errorf("unexpected script after secret sync: %+v", s)
+					}
+					return nil
+				},
+			},
+			{
+				ResourceName:      addr,
+				ImportState:       true,
+				ImportStateId:     "acct1/app/no-content",
+				ImportStateVerify: true,
+				// secret_text の値は API から取得できない
+				ImportStateVerifyIgnore: []string{"secret_text_bindings"},
+			},
+		},
+		CheckDestroy: func(_ *terraform.State) error {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if len(fake.scripts) != 0 {
+				return fmt.Errorf("scripts still exist after destroy: %v", fake.scripts)
+			}
+			return nil
+		},
+	})
+}
+
+// TestWorkersScriptResource_noContentExisting は、content を管理しないモードで既存の Worker を
+// 黙って取り込まず、import を促すことを確認する。
+func TestWorkersScriptResource_noContentExisting(t *testing.T) {
+	fake := newFakeWorkers()
+	fake.scripts["acct1/app"] = fakeWorkerScript{meta: client.WorkerScriptMetadata{MainModule: "index.js"}, content: "export default {}"}
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+
+	t.Setenv(envAPIToken, "fake-token")
+	t.Setenv(envBaseURL, srv.URL)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      workersScriptNoContentConfig(`A = "1"`),
+				ExpectError: regexp.MustCompile(`acct1/app/no-content`),
+			},
+		},
+	})
+}
+
+func TestWorkersScriptResource_noContentConflicts(t *testing.T) {
+	t.Setenv(envAPIToken, "fake-token")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "cloudflare_workers_script" "app" {
+  account_id          = "acct1"
+  script_name         = "app"
+  plain_text_bindings = { A = "1" }
+  compatibility_date  = "2026-01-01"
+}
+`,
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`(?s)plain_text_bindings は content を指定したときだけ.*compatibility_date は content`),
 			},
 		},
 	})
