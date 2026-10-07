@@ -15,6 +15,7 @@ Cloudflare API v4 は SDK を使わず、`internal/client` の自前クライア
 | --- | --- | --- |
 | Resource | `cloudflare_dns_record` | [docs/resources/dns_record.md](docs/resources/dns_record.md) |
 | Resource | `cloudflare_api_token` | [docs/resources/api_token.md](docs/resources/api_token.md) |
+| Resource | `cloudflare_workers_script` | [docs/resources/workers_script.md](docs/resources/workers_script.md) |
 | Data Source | `cloudflare_zone` | [docs/data-sources/zone.md](docs/data-sources/zone.md) |
 | Data Source | `cloudflare_api_token_permission_groups` | [docs/data-sources/api_token_permission_groups.md](docs/data-sources/api_token_permission_groups.md) |
 
@@ -54,16 +55,21 @@ terraform plan -var zone_name=example.com
 
 | 環境変数 | 内容 |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit` 権限を持つ API Token |
+| `CLOUDFLARE_API_TOKEN` | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit`・`Workers Scripts:Edit` 権限を持つ API Token |
 | `CLOUDFLARE_ZONE_ID` | テストに使う Zone の ID |
 | `CLOUDFLARE_ZONE_NAME` | テストに使う Zone の名前 |
-| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token` のテストに使うアカウントの ID |
+| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token`・`cloudflare_workers_script` のテストに使うアカウントの ID |
 
 ### API Token を管理するときの注意
 
 - `cloudflare_api_token` の値（`value`）は作成時にしか取得できないため、state に平文で保存される。state は暗号化した remote backend で管理する
 - provider が使うトークン自身にトークン作成の権限が要る（ユーザーのトークンは `API Tokens:Edit`、アカウントのトークンは `Account API Tokens:Edit`）。この最初の 1 本はダッシュボードで作る
 - provider が使っているトークン自身を Terraform で管理して destroy すると、それ以降の API 呼び出しができなくなる
+
+### Workers スクリプトを管理するときの注意
+
+- 対応しているのは ES Modules 形式の単一ファイルのスクリプトと、`plain_text`・`secret_text` のバインディングのみ。apply するとバインディングは Terraform の設定で丸ごと置き換わる（ダッシュボードで追加した KV などのバインディングは消える）
+- `secret_text_bindings` の値は state に平文で保存される。また Cloudflare は値を返さないため、Terraform の外での値の変更は検出できない
 
 ### ドキュメント
 
