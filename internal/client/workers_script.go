@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -99,10 +102,48 @@ func (c *Client) GetWorkerScriptSettings(ctx context.Context, accountID, scriptN
 	return do[WorkerScriptSettings](ctx, c, http.MethodGet, workerScriptPath(accountID, scriptName)+"/settings", nil)
 }
 
-// GetWorkerScriptContent はメインモジュールの中身を取得する。
-func (c *Client) GetWorkerScriptContent(ctx context.Context, accountID, scriptName string) (string, error) {
-	raw, err := getRaw(ctx, c, workerScriptPath(accountID, scriptName)+"/content/v2")
-	return string(raw), err
+// WorkerScriptContent はアップロード済みのメインモジュール。
+type WorkerScriptContent struct {
+	MainModule string
+	Content    string
+}
+
+// GetWorkerScriptContent はメインモジュールの名前と中身を取得する。
+// API はモジュールを multipart で返し、メインモジュール名を CF-Entrypoint ヘッダで示す。
+func (c *Client) GetWorkerScriptContent(ctx context.Context, accountID, scriptName string) (WorkerScriptContent, error) {
+	header, raw, err := getRaw(ctx, c, workerScriptPath(accountID, scriptName)+"/content/v2")
+	if err != nil {
+		return WorkerScriptContent{}, err
+	}
+	return parseWorkerScriptContent(header, raw)
+}
+
+func parseWorkerScriptContent(header http.Header, raw []byte) (WorkerScriptContent, error) {
+	entrypoint := header.Get("CF-Entrypoint")
+	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(mediaType, "multipart/") {
+		return WorkerScriptContent{}, fmt.Errorf("unexpected Content-Type %q for worker script content", header.Get("Content-Type"))
+	}
+
+	r := multipart.NewReader(bytes.NewReader(raw), params["boundary"])
+	for {
+		p, err := r.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return WorkerScriptContent{}, fmt.Errorf("read worker script content: %w", err)
+		}
+		if entrypoint != "" && p.FormName() != entrypoint {
+			continue
+		}
+		b, err := io.ReadAll(p)
+		if err != nil {
+			return WorkerScriptContent{}, fmt.Errorf("read worker module %q: %w", p.FormName(), err)
+		}
+		return WorkerScriptContent{MainModule: p.FormName(), Content: string(b)}, nil
+	}
+	return WorkerScriptContent{}, fmt.Errorf("main module %q not found in worker script content", entrypoint)
 }
 
 func (c *Client) DeleteWorkerScript(ctx context.Context, accountID, scriptName string) error {

@@ -64,7 +64,18 @@ func TestGetWorkerScriptContent(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/accounts/acct1/workers/scripts/hello/content/v2":
-			_, _ = w.Write([]byte("export default {}"))
+			// 実 API と同じく、モジュールを multipart で返しメインモジュールをヘッダで示す
+			w.Header().Set("Content-Type", "multipart/form-data; boundary=b1")
+			w.Header().Set("CF-Entrypoint", "index.mjs")
+			_, _ = w.Write([]byte("--b1\r\n" +
+				"Content-Disposition: form-data; name=\"util.mjs\"; filename=\"util.mjs\"\r\n" +
+				"Content-Type: application/javascript+module\r\n\r\n" +
+				"export const x = 1\r\n" +
+				"--b1\r\n" +
+				"Content-Disposition: form-data; name=\"index.mjs\"; filename=\"index.mjs\"\r\n" +
+				"Content-Type: application/javascript+module\r\n\r\n" +
+				"export default {}\n\r\n" +
+				"--b1--\r\n"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":10007,"message":"workers.api.error.script_not_found"}],"result":null}`))
@@ -72,8 +83,8 @@ func TestGetWorkerScriptContent(t *testing.T) {
 	})
 
 	got, err := c.GetWorkerScriptContent(context.Background(), "acct1", "hello")
-	if err != nil || got != "export default {}" {
-		t.Errorf("GetWorkerScriptContent = (%q, %v)", got, err)
+	if err != nil || got.MainModule != "index.mjs" || got.Content != "export default {}\n" {
+		t.Errorf("GetWorkerScriptContent = (%+v, %v)", got, err)
 	}
 
 	_, err = c.GetWorkerScriptContent(context.Background(), "acct1", "missing")

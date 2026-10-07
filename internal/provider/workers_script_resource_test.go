@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -175,7 +177,15 @@ func (f *fakeWorkers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Bindings:           bindings,
 		})
 	case sub == "content/v2" && r.Method == http.MethodGet:
-		_, _ = w.Write([]byte(existing.content))
+		// 実 API と同じく multipart で返し、メインモジュール名をヘッダで示す
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		part, _ := mw.CreateFormFile(existing.meta.MainModule, existing.meta.MainModule)
+		_, _ = part.Write([]byte(existing.content))
+		_ = mw.Close()
+		w.Header().Set("Content-Type", mw.FormDataContentType())
+		w.Header().Set("CF-Entrypoint", existing.meta.MainModule)
+		_, _ = w.Write(buf.Bytes())
 	case sub == "" && r.Method == http.MethodDelete:
 		delete(f.scripts, key)
 		f.writeResult(w, http.StatusOK, nil)
@@ -262,6 +272,13 @@ func TestWorkersScriptResource_fake(t *testing.T) {
 						return nil
 					},
 				),
+			},
+			{
+				// main_module が既定値以外でも import で復元できる
+				ResourceName:      addr,
+				ImportState:       true,
+				ImportStateId:     "acct1/hello",
+				ImportStateVerify: true,
 			},
 			{
 				// Terraform の外でスクリプトが書き換えられたら差分として検出する
@@ -366,6 +383,13 @@ resource "cloudflare_workers_script" "test" {
 			{
 				Config: config("v1"),
 				Check:  resource.TestCheckResourceAttr("cloudflare_workers_script.test", "plain_text_bindings.MESSAGE", "v1"),
+			},
+			{
+				ResourceName:            "cloudflare_workers_script.test",
+				ImportState:             true,
+				ImportStateId:           accountID + "/tf-acc-test",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"secret_text_bindings"},
 			},
 			{
 				Config: config("v2"),

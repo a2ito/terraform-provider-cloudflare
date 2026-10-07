@@ -305,11 +305,8 @@ func (r *workersScriptResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 	next.ID = types.StringValue(name)
-	next.Content = types.StringValue(content)
-	if next.MainModule.IsNull() {
-		// import 直後。API からはメインモジュール名を取得できないため既定値とみなす。
-		next.MainModule = types.StringValue(defaultMainModule)
-	}
+	next.MainModule = types.StringValue(content.MainModule)
+	next.Content = types.StringValue(content.Content)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, next)...)
 }

@@ -96,7 +96,7 @@ func do[T any](ctx context.Context, c *Client, method, path string, body any) (T
 func send[T any](ctx context.Context, c *Client, method, path string, body io.Reader, contentType string) (T, error) {
 	var zero T
 
-	status, raw, err := c.roundTrip(ctx, method, path, body, contentType)
+	status, _, raw, err := c.roundTrip(ctx, method, path, body, contentType)
 	if err != nil {
 		return zero, err
 	}
@@ -115,24 +115,24 @@ func send[T any](ctx context.Context, c *Client, method, path string, body io.Re
 	return env.Result, nil
 }
 
-// getRaw はエンベロープに包まれていないレスポンス本文（スクリプト本体など）を取得する。
-func getRaw(ctx context.Context, c *Client, path string) ([]byte, error) {
-	status, raw, err := c.roundTrip(ctx, http.MethodGet, path, nil, "")
+// getRaw はエンベロープに包まれていないレスポンス（スクリプト本体など）をヘッダごと取得する。
+func getRaw(ctx context.Context, c *Client, path string) (http.Header, []byte, error) {
+	status, header, raw, err := c.roundTrip(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if status >= 400 {
 		var env envelope[json.RawMessage]
 		_ = json.Unmarshal(raw, &env) // エラー時のみエンベロープで返るので、読めなければ HTTP ステータスだけで報告する
-		return nil, &ResponseError{StatusCode: status, Errors: env.Errors}
+		return nil, nil, &ResponseError{StatusCode: status, Errors: env.Errors}
 	}
-	return raw, nil
+	return header, raw, nil
 }
 
-func (c *Client) roundTrip(ctx context.Context, method, path string, body io.Reader, contentType string) (int, []byte, error) {
+func (c *Client) roundTrip(ctx context.Context, method, path string, body io.Reader, contentType string) (int, http.Header, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
-		return 0, nil, fmt.Errorf("build request %s %s: %w", method, path, err)
+		return 0, nil, nil, fmt.Errorf("build request %s %s: %w", method, path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
 	if contentType != "" {
@@ -141,13 +141,13 @@ func (c *Client) roundTrip(ctx context.Context, method, path string, body io.Rea
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("send request %s %s: %w", method, path, err)
+		return 0, nil, nil, fmt.Errorf("send request %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, nil, fmt.Errorf("read response body: %w", err)
+		return 0, nil, nil, fmt.Errorf("read response body: %w", err)
 	}
-	return resp.StatusCode, raw, nil
+	return resp.StatusCode, resp.Header, raw, nil
 }
