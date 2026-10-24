@@ -1,0 +1,2 @@
+# examples/ の import.sh は tfplugindocs が docs にそのまま埋め込む断片なので、shebang を書かずに sh として読む
+shell=sh
