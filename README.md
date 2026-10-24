@@ -11,13 +11,13 @@ Cloudflare API v4 は SDK を使わず、`internal/client` の自前クライア
 
 ## 対応リソース
 
-| 種類 | 名前 | ドキュメント |
-| --- | --- | --- |
-| Resource | `cloudflare_dns_record` | [docs/resources/dns_record.md](docs/resources/dns_record.md) |
-| Resource | `cloudflare_api_token` | [docs/resources/api_token.md](docs/resources/api_token.md) |
-| Resource | `cloudflare_workers_script` | [docs/resources/workers_script.md](docs/resources/workers_script.md) |
-| Resource | `cloudflare_workers_build_trigger` | [docs/resources/workers_build_trigger.md](docs/resources/workers_build_trigger.md) |
-| Data Source | `cloudflare_zone` | [docs/data-sources/zone.md](docs/data-sources/zone.md) |
+| 種類        | 名前                                     | ドキュメント                                                                                         |
+| ----------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Resource    | `cloudflare_dns_record`                  | [docs/resources/dns_record.md](docs/resources/dns_record.md)                                         |
+| Resource    | `cloudflare_api_token`                   | [docs/resources/api_token.md](docs/resources/api_token.md)                                           |
+| Resource    | `cloudflare_workers_script`              | [docs/resources/workers_script.md](docs/resources/workers_script.md)                                 |
+| Resource    | `cloudflare_workers_build_trigger`       | [docs/resources/workers_build_trigger.md](docs/resources/workers_build_trigger.md)                   |
+| Data Source | `cloudflare_zone`                        | [docs/data-sources/zone.md](docs/data-sources/zone.md)                                               |
 | Data Source | `cloudflare_api_token_permission_groups` | [docs/data-sources/api_token_permission_groups.md](docs/data-sources/api_token_permission_groups.md) |
 
 Provider の設定は [docs/index.md](docs/index.md) を参照。
@@ -42,27 +42,27 @@ terraform plan -var zone_name=example.com
 
 ## 開発
 
-| コマンド | 内容 |
-| --- | --- |
-| `make build` | バイナリをビルドする |
-| `make test` | Cloudflare に接続しないテスト（フェイクサーバを使う。`terraform` が必要） |
-| `make testacc` | 実際の Cloudflare に対する acceptance test |
-| `make docs` | スキーマと `examples/` から `docs/` を生成する |
-| `make vet` / `make fmt` | 静的解析 / 整形 |
+| コマンド                | 内容                                                                      |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `make build`            | バイナリをビルドする                                                      |
+| `make test`             | Cloudflare に接続しないテスト（フェイクサーバを使う。`terraform` が必要） |
+| `make testacc`          | 実際の Cloudflare に対する acceptance test                                |
+| `make docs`             | スキーマと `examples/` から `docs/` を生成する                            |
+| `make vet` / `make fmt` | 静的解析 / 整形                                                           |
 
 ### acceptance test
 
 実際に DNS レコード・API Token・Worker・Workers Builds のトリガーを作成・削除する。以下の環境変数が必要。
 
-| 環境変数 | 内容 |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit`・`Workers Scripts:Edit` 権限を持つ API Token |
-| `CLOUDFLARE_ZONE_ID` | テストに使う Zone の ID |
-| `CLOUDFLARE_ZONE_NAME` | テストに使う Zone の名前 |
-| `CLOUDFLARE_ACCOUNT_ID` | `cloudflare_api_token`・`cloudflare_workers_script`・`cloudflare_workers_build_trigger` のテストに使うアカウントの ID |
-| `CLOUDFLARE_BUILDS_API_TOKEN` | `Workers CI Write`（UI では Workers Builds Configuration : Edit）を持つ**ユーザーの** API Token |
-| `CLOUDFLARE_REPO_CONNECTION_UUID` | トリガーのテストに使う既存のリポジトリの接続の UUID |
-| `CLOUDFLARE_BUILD_TOKEN_UUID` | トリガーのテストに使う既存のビルドトークンの UUID |
+| 環境変数                          | 内容                                                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`            | `Zone:Read`・`DNS:Edit`・`Account API Tokens:Edit`・`Workers Scripts:Edit` 権限を持つ API Token                       |
+| `CLOUDFLARE_ZONE_ID`              | テストに使う Zone の ID                                                                                               |
+| `CLOUDFLARE_ZONE_NAME`            | テストに使う Zone の名前                                                                                              |
+| `CLOUDFLARE_ACCOUNT_ID`           | `cloudflare_api_token`・`cloudflare_workers_script`・`cloudflare_workers_build_trigger` のテストに使うアカウントの ID |
+| `CLOUDFLARE_BUILDS_API_TOKEN`     | `Workers CI Write`（UI では Workers Builds Configuration : Edit）を持つ**ユーザーの** API Token                       |
+| `CLOUDFLARE_REPO_CONNECTION_UUID` | トリガーのテストに使う既存のリポジトリの接続の UUID                                                                   |
+| `CLOUDFLARE_BUILD_TOKEN_UUID`     | トリガーのテストに使う既存のビルドトークンの UUID                                                                     |
 
 トリガーのテストは、push されないブランチ（`tf-acc-test-never-pushed`）だけをビルドするトリガーを作るので、ビルドは走らない。
 
