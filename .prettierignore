@@ -1,0 +1,2 @@
+# make docs（tfplugindocs）の生成物。CI が make docs の結果と一致するかを見ている
+docs/
